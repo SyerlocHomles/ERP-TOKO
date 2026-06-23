@@ -1,5 +1,481 @@
-PART 1 HTML head+config + helper UI components
-PART 2 App + Dashboard + Kas
-PART 3 Sales Order + Surat Jalan
-PART 4 Invoice + Pembelian + Piutang + Hutang
-PART 5 Retur + Stok + Master + Laporan + penutup
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ERP Toko</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh}
+input,select{font-family:inherit}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:#0f1117}
+::-webkit-scrollbar-thumb{background:#1e2535;border-radius:4px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const{useState,useEffect}=React;
+const SUPABASE_URL="https://hqtuvqyhimdzinfhnisj.supabase.co";
+const SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhxdHV2cXloaW1kemluZmhuaXNqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4ODk2OTUsImV4cCI6MjA5MzQ2NTY5NX0.wTIXYEdD1a0e1-X_o4DaVK6Hmrrz8B_UnvnWwcw4WSw";
+const sb=async(table,method="GET",body=null,query="")=>{
+  const q=query.replace(/ /g,"%20");
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${table}${q}`,{method,headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:method==="POST"?"return=representation":method==="PATCH"?"return=representation":""},body:body?JSON.stringify(body):null});
+  if(method==="DELETE"&&res.ok)return null;
+  const text=await res.text();
+  const data=text?JSON.parse(text):null;
+  if(!res.ok)throw new Error(data?.message||JSON.stringify(data)||"Error");
+  return data;
+};
+const genNomor=async(prefix)=>{
+  const now=new Date();
+  const yy=String(now.getFullYear()).slice(2);
+  const mm=String(now.getMonth()+1).padStart(2,"0");
+  const tahun=now.getFullYear();
+  const bulan=now.getMonth()+1;
+  const existing=await sb("nomor_urut","GET",null,`?prefix=eq.${prefix}&tahun=eq.${tahun}&bulan=eq.${bulan}`);
+  let urut=0;
+  if(existing&&existing.length>0){urut=(existing[0].urut||0)+1;await sb(`nomor_urut?id=eq.${existing[0].id}`,"PATCH",{urut});}
+  else{urut=1;await sb("nomor_urut","POST",{prefix,tahun,bulan,urut});}
+  if(prefix==="T")return`T${yy}${mm}${String(urut).padStart(3,"0")}`;
+  if(prefix==="BCA")return`BCA${yy}${mm}${String(urut).padStart(3,"0")}`;
+  return`${prefix}${yy}${mm}${String(urut).padStart(4,"0")}`;
+};
+const fmt=(n)=>new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",minimumFractionDigits:0}).format(n||0);
+const fmtDate=(d)=>d?new Date(d).toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"}):"-";
+const today=()=>new Date().toISOString().split("T")[0];
+const thisMonth=()=>new Date().toISOString().slice(0,7);
+const lastDay=(ym)=>{const d=new Date(ym+"-01");d.setMonth(d.getMonth()+1);d.setDate(0);return d.toISOString().split("T")[0];};
+const MENUS=[{id:"dashboard",label:"Dashboard",icon:"⊞"},{id:"kas",label:"Kas & Bank",icon:"💳"},{id:"so",label:"Sales Order",icon:"📋"},{id:"sj",label:"Surat Jalan",icon:"🚚"},{id:"penjualan",label:"Faktur/Invoice",icon:"🧾"},{id:"pembelian",label:"Pembelian",icon:"📦"},{id:"piutang",label:"Piutang",icon:"📥"},{id:"hutang",label:"Hutang",icon:"📤"},{id:"retur",label:"Retur",icon:"🔄"},{id:"stok",label:"Stok & Produk",icon:"🗃️"},{id:"master",label:"Master Data",icon:"👥"},{id:"laporan",label:"Laporan",icon:"📊"}];
+const Card=({children,style={}})=><div style={{background:"#161b27",border:"1px solid #1e2535",borderRadius:14,padding:18,...style}}>{children}</div>;
+const Btn=({children,onClick,color="#3b82f6",style={},small=false,disabled=false})=><button onClick={onClick} disabled={disabled} style={{background:disabled?"#1e2535":color,color:disabled?"#475569":"#fff",border:"none",borderRadius:8,padding:small?"5px 12px":"9px 18px",fontWeight:600,fontSize:small?12:14,cursor:disabled?"not-allowed":"pointer",...style}}>{children}</button>;
+const Inp=({label,value,onChange,type="text",placeholder="",style={}})=><div style={{display:"flex",flexDirection:"column",gap:4}}>{label&&<label style={{fontSize:11,color:"#64748b",fontWeight:600}}>{label}</label>}<input value={value} onChange={e=>onChange(e.target.value)} type={type} placeholder={placeholder} style={{background:"#0f1117",border:"1px solid #1e2535",borderRadius:8,padding:"8px 11px",color:"#e2e8f0",fontSize:13,outline:"none",...style}}/></div>;
+const Sel=({label,value,onChange,options})=><div style={{display:"flex",flexDirection:"column",gap:4}}>{label&&<label style={{fontSize:11,color:"#64748b",fontWeight:600}}>{label}</label>}<select value={value} onChange={e=>onChange(e.target.value)} style={{background:"#0f1117",border:"1px solid #1e2535",borderRadius:8,padding:"8px 11px",color:"#e2e8f0",fontSize:13,outline:"none"}}>{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>;
+const PageTitle=({title,subtitle})=><div style={{marginBottom:20}}><h1 style={{margin:0,fontSize:20,fontWeight:700,color:"#f1f5f9"}}>{title}</h1>{subtitle&&<p style={{margin:"3px 0 0",color:"#64748b",fontSize:12}}>{subtitle}</p>}</div>;
+const Loading=()=><div style={{color:"#64748b",padding:40,textAlign:"center"}}>⏳ Memuat...</div>;
+const Badge=({label,bg="#14532d",color="#4ade80"})=><span style={{padding:"2px 9px",borderRadius:20,fontSize:11,fontWeight:600,background:bg,color,whiteSpace:"nowrap"}}>{label}</span>;
+const statusBadge=(s)=>{const m={lunas:["#14532d","#4ade80"],kredit:["#78350f","#fbbf24"],hutang:["#7f1d1d","#f87171"],"belum lunas":["#7f1d1d","#f87171"],sebagian:["#78350f","#fbbf24"],pending:["#1e3a5f","#60a5fa"],proses:["#78350f","#fbbf24"],selesai:["#14532d","#4ade80"],dikirim:["#1e3a5f","#60a5fa"],diterima:["#14532d","#4ade80"]};const[bg,color]=m[s]||["#1e2535","#94a3b8"];return<Badge label={s} bg={bg} color={color}/>;};
+const Tbl=({headers,rows,empty="Belum ada data"})=><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{color:"#475569"}}>{headers.map((h,i)=><th key={i} style={{textAlign:h.r?"right":"left",padding:"7px 8px",borderBottom:"1px solid #1e2535",whiteSpace:"nowrap"}}>{h.l}</th>)}</tr></thead><tbody>{rows.length===0?<tr><td colSpan={headers.length} style={{textAlign:"center",padding:24,color:"#475569"}}>{empty}</td></tr>:rows.map((row,i)=><tr key={i}>{row.map((cell,j)=><td key={j} style={{padding:"8px",borderBottom:"1px solid #1e2535",textAlign:headers[j]?.r?"right":"left"}}>{cell}</td>)}</tr>)}</tbody></table></div>;
+const BarChart=({data,color="#3b82f6",label=""})=>{const max=Math.max(...data.map(d=>d.val),1);return<div>{label&&<div style={{color:"#64748b",fontSize:11,marginBottom:8,fontWeight:600}}>{label}</div>}<div style={{display:"flex",alignItems:"flex-end",gap:3,height:70}}>{data.map((d,i)=><div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}><div style={{width:"100%",background:color,borderRadius:"3px 3px 0 0",height:`${(d.val/max)*58}px`,minHeight:d.val>0?3:0}}/><div style={{fontSize:9,color:"#475569"}}>{d.label}</div></div>)}</div></div>;};
+const printDoc=(judul,info,items,total,catatan="")=>{const w=window.open("","_blank");if(!w)return alert("Izinkan popup!");w.document.write(`<html><head><title>${judul}</title><style>body{font-family:Arial,sans-serif;padding:28px;color:#111;font-size:13px}h2{margin:0 0 2px}table{width:100%;border-collapse:collapse;margin-top:12px}th{background:#f0f0f0;padding:7px;border:1px solid #ccc}td{padding:7px;border:1px solid #ccc}.r{text-align:right}.total{font-weight:bold;font-size:15px;margin-top:12px;text-align:right}.footer{margin-top:36px;color:#999;font-size:11px;text-align:center}</style></head><body><h2>${judul}</h2><p style="color:#555;font-size:12px;margin-bottom:18px">${info}</p><table><tr><th>Produk</th><th class="r">Qty</th><th class="r">Harga</th><th class="r">Subtotal</th></tr>${items.map(i=>`<tr><td>${i.nama_produk||"-"}</td><td class="r">${i.qty||"-"}</td><td class="r">${i.harga?fmt(i.harga):"-"}</td><td class="r">${i.subtotal?fmt(i.subtotal):"-"}</td></tr>`).join("")}</table>${total?`<div class="total">Total: ${fmt(total)}</div>`:""}<div class="footer">Dicetak: ${new Date().toLocaleString("id-ID")}</div></body></html>`);w.document.close();w.print();};
+  function App(){
+  const[menu,setMenu]=useState("dashboard");
+  const[sideOpen,setSideOpen]=useState(false);
+  const[toast,setToast]=useState(null);
+  const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
+  return(
+    <div style={{fontFamily:"'Segoe UI',sans-serif",background:"#0f1117",minHeight:"100vh",width:"100%",color:"#e2e8f0",display:"flex"}}>
+      {sideOpen&&<div onClick={()=>setSideOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:99}}/>}
+      <div style={{width:sideOpen?200:50,transition:"width .2s",background:"#161b27",borderRight:"1px solid #1e2535",display:"flex",flexDirection:"column",position:"fixed",top:0,left:0,height:"100vh",zIndex:100,overflow:"hidden"}}>
+        <div onClick={()=>setSideOpen(!sideOpen)} style={{padding:"13px 12px",borderBottom:"1px solid #1e2535",display:"flex",alignItems:"center",gap:9,cursor:"pointer"}}>
+          <span style={{fontSize:18,flexShrink:0}}>☰</span>
+          {sideOpen&&<span style={{fontWeight:700,fontSize:13,color:"#60a5fa",whiteSpace:"nowrap"}}>ERP Toko</span>}
+        </div>
+        {MENUS.map(m=><div key={m.id} onClick={()=>{setMenu(m.id);setSideOpen(false);}} style={{padding:"10px 12px",display:"flex",alignItems:"center",gap:9,cursor:"pointer",background:menu===m.id?"#1e3a5f":"transparent",borderLeft:menu===m.id?"3px solid #3b82f6":"3px solid transparent"}}><span style={{fontSize:16,flexShrink:0}}>{m.icon}</span>{sideOpen&&<span style={{whiteSpace:"nowrap",fontWeight:menu===m.id?600:400,color:menu===m.id?"#93c5fd":"#94a3b8",fontSize:12}}>{m.label}</span>}</div>)}
+      </div>
+      <div style={{marginLeft:50,flex:1,padding:"18px 14px",boxSizing:"border-box",minHeight:"100vh",background:"#0f1117"}}>
+        {toast&&<div style={{position:"fixed",top:12,right:12,zIndex:999,padding:"10px 16px",background:toast.type==="success"?"#166534":"#7f1d1d",border:`1px solid ${toast.type==="success"?"#22c55e":"#ef4444"}`,borderRadius:10,color:"#fff",fontWeight:600,fontSize:13,maxWidth:280}}>{toast.msg}</div>}
+        {menu==="dashboard"&&<Dashboard showToast={showToast}/>}
+        {menu==="kas"&&<Kas showToast={showToast}/>}
+        {menu==="so"&&<SalesOrder showToast={showToast}/>}
+        {menu==="sj"&&<SuratJalan showToast={showToast}/>}
+        {menu==="penjualan"&&<Penjualan showToast={showToast}/>}
+        {menu==="pembelian"&&<Pembelian showToast={showToast}/>}
+        {menu==="piutang"&&<PiutangPage showToast={showToast}/>}
+        {menu==="hutang"&&<HutangPage showToast={showToast}/>}
+        {menu==="retur"&&<Retur showToast={showToast}/>}
+        {menu==="stok"&&<Stok showToast={showToast}/>}
+        {menu==="master"&&<Master showToast={showToast}/>}
+        {menu==="laporan"&&<Laporan showToast={showToast}/>}
+      </div>
+    </div>
+  );
+}
+function Dashboard({showToast}){
+  const[stats,setStats]=useState({});
+  const[chart,setChart]=useState([]);
+  const[recent,setRecent]=useState([]);
+  const[stokRendah,setStokRendah]=useState([]);
+  const[loading,setLoading]=useState(true);
+  useEffect(()=>{(async()=>{try{
+    const months=Array.from({length:6},(_,i)=>{const d=new Date();d.setMonth(d.getMonth()-(5-i));return d.toISOString().slice(0,7);});
+    const[kas,jual,beli,piutang,hutang,produk,recentSO,stok]=await Promise.all([sb("akun_kas","GET",null,"?select=saldo"),sb("penjualan","GET",null,`?select=total&tanggal=gte.${thisMonth()}-01`),sb("pembelian","GET",null,`?select=total&tanggal=gte.${thisMonth()}-01`),sb("piutang","GET",null,"?select=sisa&status=eq.belum%20lunas"),sb("hutang","GET",null,"?select=sisa&status=eq.belum%20lunas"),sb("produk","GET",null,"?select=id"),sb("sales_order","GET",null,"?select=*&order=created_at.desc&limit=5"),sb("produk","GET",null,"?select=nama,stok&stok=lte.5&order=stok&limit=5")]);
+    setStats({kas:kas?.reduce((a,b)=>a+(b.saldo||0),0)||0,jual:jual?.reduce((a,b)=>a+(b.total||0),0)||0,beli:beli?.reduce((a,b)=>a+(b.total||0),0)||0,piutang:piutang?.reduce((a,b)=>a+(b.sisa||0),0)||0,hutang:hutang?.reduce((a,b)=>a+(b.sisa||0),0)||0,produk:produk?.length||0});
+    setRecent(recentSO||[]);setStokRendah(stok||[]);
+    const cj=await Promise.all(months.map(m=>sb("penjualan","GET",null,`?select=total&tanggal=gte.${m}-01&tanggal=lte.${lastDay(m)}`)));
+    setChart(months.map((m,i)=>({label:m.slice(5),val:cj[i]?.reduce((a,b)=>a+(b.total||0),0)||0})));
+  }catch(e){showToast("Gagal: "+e.message,"error");}setLoading(false);})();},[]);
+  if(loading)return<Loading/>;
+  return(
+    <div>
+      <PageTitle title="Dashboard" subtitle={`Hari ini, ${fmtDate(new Date())}`}/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:16}}>
+        {[["💰","Kas & Bank","#22c55e",fmt(stats.kas)],["📈","Penjualan Bln Ini","#3b82f6",fmt(stats.jual)],["📉","Pembelian Bln Ini","#f59e0b",fmt(stats.beli)],["📥","Piutang Aktif","#a78bfa",fmt(stats.piutang)],["📤","Hutang Aktif","#f87171",fmt(stats.hutang)],["📦","Total Produk","#38bdf8",stats.produk]].map(([icon,label,color,val])=>(
+          <Card key={label} style={{borderTop:`3px solid ${color}`}}><div style={{fontSize:22,marginBottom:5}}>{icon}</div><div style={{color,fontWeight:700,fontSize:15}}>{val}</div><div style={{color:"#64748b",fontSize:11,marginTop:2}}>{label}</div></Card>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+        <Card><BarChart data={chart} color="#3b82f6" label="Penjualan 6 Bulan"/></Card>
+        <Card><div style={{color:"#94a3b8",fontSize:11,fontWeight:600,marginBottom:8}}>⚠️ STOK HAMPIR HABIS</div>{stokRendah.length===0?<div style={{color:"#475569",fontSize:12}}>Semua stok aman ✅</div>:stokRendah.map(p=><div key={p.nama} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #1e2535",fontSize:12}}><span>{p.nama}</span><span style={{color:"#f87171",fontWeight:700}}>Sisa {p.stok}</span></div>)}</Card>
+      </div>
+      <Card><div style={{color:"#94a3b8",fontSize:11,fontWeight:600,marginBottom:10}}>SALES ORDER TERBARU</div><Tbl headers={[{l:"No. SO"},{l:"Pelanggan"},{l:"Total",r:true},{l:"Status"}]} rows={recent.map(r=>[<span style={{color:"#60a5fa"}}>{r.nomor_so}</span>,r.pelanggan||"-",<span style={{color:"#22c55e",fontWeight:600}}>{fmt(r.total)}</span>,statusBadge(r.status)])} empty="Belum ada SO"/></Card>
+    </div>
+  );
+}
+function Kas({showToast}){
+  const[akun,setAkun]=useState([]);
+  const[transaksi,setTransaksi]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[showForm,setShowForm]=useState(false);
+  const[showAkunForm,setShowAkunForm]=useState(false);
+  const[form,setForm]=useState({akun_id:"",tipe:"masuk",jumlah:"",keterangan:"",tanggal:today(),metode:"tunai"});
+  const[namaAkun,setNamaAkun]=useState("");
+  const F=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const load=async()=>{try{const[a,t]=await Promise.all([sb("akun_kas","GET",null,"?select=*&order=nama"),sb("transaksi_kas","GET",null,"?select=*,akun_kas(nama)&order=created_at.desc&limit=100")]);setAkun(a||[]);setTransaksi(t||[]);if(a?.length&&!form.akun_id)setForm(f=>({...f,akun_id:a[0].id}));}catch(e){showToast("Gagal: "+e.message,"error");}setLoading(false);};
+  useEffect(()=>{load();},[]);
+  const simpan=async()=>{
+    if(!form.akun_id||!form.jumlah)return showToast("Isi semua field!","error");
+    try{let nomor="";if(form.tipe==="masuk"){const prefix=form.metode==="bca"?"BCA":"T";nomor=await genNomor(prefix);}
+    await sb("transaksi_kas","POST",{...form,jumlah:parseFloat(form.jumlah),nomor_terima:nomor||null});
+    const delta=form.tipe==="masuk"?parseFloat(form.jumlah):-parseFloat(form.jumlah);
+    const a=akun.find(x=>x.id===form.akun_id);
+    await sb(`akun_kas?id=eq.${form.akun_id}`,"PATCH",{saldo:(a?.saldo||0)+delta});
+    showToast(`Berhasil! ${nomor?"No: "+nomor:""}`);setShowForm(false);F("jumlah","");F("keterangan","");load();}catch(e){showToast(e.message,"error");}
+  };
+  const tambahAkun=async()=>{if(!namaAkun)return showToast("Isi nama!","error");try{await sb("akun_kas","POST",{nama:namaAkun,saldo:0});showToast("Akun ditambahkan!");setNamaAkun("");setShowAkunForm(false);load();}catch(e){showToast(e.message,"error");}};
+  if(loading)return<Loading/>;
+  return(
+    <div>
+      <PageTitle title="Kas & Bank" subtitle="Kelola arus kas masuk dan keluar"/>
+      <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>{akun.map(a=><Card key={a.id} style={{borderTop:"3px solid #22c55e",minWidth:130}}><div style={{color:"#64748b",fontSize:11}}>{a.nama}</div><div style={{color:"#22c55e",fontWeight:700,fontSize:16}}>{fmt(a.saldo)}</div></Card>)}</div>
+      <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}><Btn onClick={()=>setShowForm(!showForm)}>+ Transaksi</Btn><Btn onClick={()=>setShowAkunForm(!showAkunForm)} color="#475569">+ Akun</Btn></div>
+      {showAkunForm&&<Card style={{marginBottom:12}}><div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}><Inp label="Nama Akun" value={namaAkun} onChange={setNamaAkun} style={{flex:1,minWidth:150}}/><Btn onClick={tambahAkun}>Simpan</Btn><Btn onClick={()=>setShowAkunForm(false)} color="#475569">Batal</Btn></div></Card>}
+      {showForm&&<Card style={{marginBottom:16}}>
+        <h3 style={{margin:"0 0 12px",fontSize:14}}>Tambah Transaksi</h3>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:9}}>
+          <Sel label="Akun" value={form.akun_id} onChange={v=>F("akun_id",v)} options={akun.map(a=>({value:a.id,label:a.nama}))}/>
+          <Sel label="Tipe" value={form.tipe} onChange={v=>F("tipe",v)} options={[{value:"masuk",label:"▲ Masuk"},{value:"keluar",label:"▼ Keluar"}]}/>
+          {form.tipe==="masuk"&&<Sel label="Metode" value={form.metode} onChange={v=>F("metode",v)} options={[{value:"tunai",label:"Tunai"},{value:"bca",label:"Bank BCA"}]}/>}
+          <Inp label="Jumlah" value={form.jumlah} onChange={v=>F("jumlah",v)} type="number"/>
+          <Inp label="Tanggal" value={form.tanggal} onChange={v=>F("tanggal",v)} type="date"/>
+          <Inp label="Keterangan" value={form.keterangan} onChange={v=>F("keterangan",v)}/>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:12}}><Btn onClick={simpan}>Simpan</Btn><Btn onClick={()=>setShowForm(false)} color="#475569">Batal</Btn></div>
+      </Card>}
+      <Card><Tbl headers={[{l:"Tanggal"},{l:"Akun"},{l:"Tipe"},{l:"Keterangan"},{l:"Jumlah",r:true}]} rows={transaksi.map(t=>[<span style={{color:"#64748b"}}>{fmtDate(t.tanggal)}</span>,t.akun_kas?.nama||"-",<Badge label={t.tipe==="masuk"?"▲ Masuk":"▼ Keluar"} bg={t.tipe==="masuk"?"#14532d":"#7f1d1d"} color={t.tipe==="masuk"?"#4ade80":"#f87171"}/>,<span style={{color:"#94a3b8"}}>{t.keterangan||"-"}</span>,<span style={{fontWeight:600,color:t.tipe==="masuk"?"#22c55e":"#f87171"}}>{fmt(t.jumlah)}</span>])} empty="Belum ada transaksi"/></Card>
+    </div>
+  );
+}
+function SalesOrder({showToast}){
+  const[list,setList]=useState([]);
+  const[produk,setProduk]=useState([]);
+  const[pelList,setPelList]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[showForm,setShowForm]=useState(false);
+  const[detail,setDetail]=useState(null);
+  const[dpForm,setDpForm]=useState({jumlah:"",metode:"tunai",catatan:"",tanggal:today()});
+  const[form,setForm]=useState({pelanggan_id:"",pelanggan:"",nomor_po:"",catatan:"",tanggal:today(),status:"pending"});
+  const[items,setItems]=useState([]);
+  const F=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const load=async()=>{try{const[l,p,pl]=await Promise.all([sb("sales_order","GET",null,"?select=*&order=created_at.desc&limit=100"),sb("produk","GET",null,"?select=*&order=nama"),sb("pelanggan","GET",null,"?select=*&order=nama")]);setList(l||[]);setProduk(p||[]);setPelList(pl||[]);if(p?.length)setItems([{produk_id:p[0].id,nama_produk:p[0].nama,qty:1,harga:p[0].harga_jual,subtotal:p[0].harga_jual}]);}catch(e){showToast("Gagal: "+e.message,"error");}setLoading(false);};
+  useEffect(()=>{load();},[]);
+  const updItem=(i,k,v)=>{const ni=[...items];ni[i]={...ni[i],[k]:v};if(k==="produk_id"){const p=produk.find(x=>x.id===v);if(p){ni[i].nama_produk=p.nama;ni[i].harga=p.harga_jual;}}ni[i].subtotal=(parseFloat(ni[i].qty)||0)*(parseFloat(ni[i].harga)||0);setItems(ni);};
+  const total=items.reduce((a,b)=>a+(b.subtotal||0),0);
+  const simpan=async()=>{
+    if(!items.length)return showToast("Tambahkan item!","error");
+    try{const nomor_so=await genNomor("SO");const pel=pelList.find(p=>p.id===form.pelanggan_id);const namaP=pel?.nama||form.pelanggan||"-";
+    const[so]=await sb("sales_order","POST",{...form,nomor_so,pelanggan:namaP,total,dp:0,sisa_bayar:total});
+    await sb("sales_order_detail","POST",items.map(i=>({...i,so_id:so.id,qty:parseFloat(i.qty),harga:parseFloat(i.harga),subtotal:parseFloat(i.subtotal)})));
+    showToast(`SO ${nomor_so} berhasil!`);setShowForm(false);setForm({pelanggan_id:"",pelanggan:"",nomor_po:"",catatan:"",tanggal:today(),status:"pending"});
+    if(produk[0])setItems([{produk_id:produk[0].id,nama_produk:produk[0].nama,qty:1,harga:produk[0].harga_jual,subtotal:produk[0].harga_jual}]);load();}catch(e){showToast(e.message,"error");}
+  };
+  const bayarDP=async(so)=>{
+    const jml=parseFloat(dpForm.jumlah);if(!jml||jml<=0)return showToast("Jumlah DP tidak valid!","error");
+    try{const prefix=dpForm.metode==="bca"?"BCA":"T";const nomor_terima=await genNomor(prefix);
+    await sb("dp_pembayaran","POST",{so_id:so.id,nomor_terima,metode:dpForm.metode,jumlah:jml,catatan:dpForm.catatan,tanggal:dpForm.tanggal});
+    const newDP=(so.dp||0)+jml;const newSisa=so.total-newDP;
+    await sb(`sales_order?id=eq.${so.id}`,"PATCH",{dp:newDP,sisa_bayar:Math.max(0,newSisa),status:newSisa<=0?"selesai":"proses"});
+    showToast(`DP diterima! No: ${nomor_terima}`);setDpForm({jumlah:"",metode:"tunai",catatan:"",tanggal:today()});
+    const updated=await sb(`sales_order?id=eq.${so.id}`,"GET",null,"?select=*");
+    const[d,dp]=await Promise.all([sb("sales_order_detail","GET",null,`?so_id=eq.${so.id}&select=*`),sb("dp_pembayaran","GET",null,`?so_id=eq.${so.id}&select=*&order=created_at`)]);
+    setDetail({...updated[0],items:d||[],dps:dp||[]});load();}catch(e){showToast(e.message,"error");}
+  };
+  const loadDetail=async(r)=>{const[d,dp]=await Promise.all([sb("sales_order_detail","GET",null,`?so_id=eq.${r.id}&select=*`),sb("dp_pembayaran","GET",null,`?so_id=eq.${r.id}&select=*&order=created_at`)]);setDetail({...r,items:d||[],dps:dp||[]});};
+  if(loading)return<Loading/>;
+  if(detail)return(
+    <div>
+      <button onClick={()=>setDetail(null)} style={{background:"none",border:"none",color:"#60a5fa",cursor:"pointer",fontSize:13,marginBottom:12}}>← Kembali</button>
+      <Card>
+        <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:16}}>
+          <div><h2 style={{margin:0,color:"#60a5fa",fontSize:18}}>{detail.nomor_so}</h2><div style={{color:"#64748b",fontSize:12,marginTop:3}}>{detail.pelanggan||"-"} · {fmtDate(detail.tanggal)}{detail.nomor_po&&` · Ref PO: ${detail.nomor_po}`}</div></div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{statusBadge(detail.status)}<Btn onClick={()=>printDoc(`Sales Order: ${detail.nomor_so}`,`Pelanggan: ${detail.pelanggan||"-"} | Tanggal: ${fmtDate(detail.tanggal)}`,detail.items,detail.total,detail.catatan)} color="#1e3a5f" small>🖨️ Print</Btn></div>
+        </div>
+        <Tbl headers={[{l:"Produk"},{l:"Qty",r:true},{l:"Harga",r:true},{l:"Subtotal",r:true}]} rows={detail.items.map(i=>[i.nama_produk,i.qty,fmt(i.harga),<span style={{fontWeight:600}}>{fmt(i.subtotal)}</span>])}/>
+        <div style={{textAlign:"right",marginTop:12,fontSize:16,fontWeight:700,color:"#22c55e"}}>Total: {fmt(detail.total)}</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginTop:12}}>
+          {[["Total DP",detail.dp,"#22c55e"],["Sisa Bayar",detail.sisa_bayar,"#f87171"],["Status",null,null]].map(([l,v,c],i)=>(
+            <div key={i} style={{background:"#0f1117",borderRadius:8,padding:10,textAlign:"center"}}><div style={{color:"#64748b",fontSize:11}}>{l}</div>{v!==null?<div style={{color:c,fontWeight:700,fontSize:14}}>{fmt(v)}</div>:<div style={{marginTop:4}}>{statusBadge(detail.status)}</div>}</div>
+          ))}
+        </div>
+        {detail.dps.length>0&&<div style={{marginTop:14}}><div style={{color:"#94a3b8",fontSize:11,fontWeight:600,marginBottom:8}}>RIWAYAT PEMBAYARAN</div><Tbl headers={[{l:"No. Terima"},{l:"Metode"},{l:"Tanggal"},{l:"Jumlah",r:true}]} rows={detail.dps.map(d=>[<span style={{color:"#60a5fa"}}>{d.nomor_terima}</span>,d.metode,fmtDate(d.tanggal),<span style={{color:"#22c55e",fontWeight:600}}>{fmt(d.jumlah)}</span>])}/></div>}
+        {detail.status!=="selesai"&&<div style={{marginTop:14}}><div style={{color:"#94a3b8",fontSize:11,fontWeight:600,marginBottom:8}}>TERIMA DP / PEMBAYARAN</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8}}><Inp label="Jumlah" value={dpForm.jumlah} onChange={v=>setDpForm(f=>({...f,jumlah:v}))} type="number"/><Sel label="Metode" value={dpForm.metode} onChange={v=>setDpForm(f=>({...f,metode:v}))} options={[{value:"tunai",label:"Tunai"},{value:"bca",label:"Bank BCA"}]}/><Inp label="Tanggal" value={dpForm.tanggal} onChange={v=>setDpForm(f=>({...f,tanggal:v}))} type="date"/><Inp label="Catatan" value={dpForm.catatan} onChange={v=>setDpForm(f=>({...f,catatan:v}))}/></div><Btn onClick={()=>bayarDP(detail)} style={{marginTop:10}} color="#166534">💰 Terima Pembayaran</Btn></div>}
+      </Card>
+    </div>
+  );
+  return(
+    <div>
+      <PageTitle title="Sales Order (SO)" subtitle="Kelola pesanan penjualan & penerimaan DP"/>
+      <Btn onClick={()=>setShowForm(!showForm)} style={{marginBottom:16}}>+ SO Baru</Btn>
+      {showForm&&<Card style={{marginBottom:16}}>
+        <h3 style={{margin:"0 0 12px",fontSize:14}}>Sales Order Baru</h3>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:9,marginBottom:12}}>
+          <Sel label="Pelanggan" value={form.pelanggan_id} onChange={v=>F("pelanggan_id",v)} options={[{value:"",label:"-- Pilih --"},...pelList.map(p=>({value:p.id,label:p.nama}))]}/>
+          <Inp label="Atau ketik nama" value={form.pelanggan} onChange={v=>F("pelanggan",v)} placeholder="Nama bebas"/>
+          <Inp label="Ref. No PO Customer" value={form.nomor_po} onChange={v=>F("nomor_po",v)}/>
+          <Inp label="Tanggal" value={form.tanggal} onChange={v=>F("tanggal",v)} type="date"/>
+          <Sel label="Status" value={form.status} onChange={v=>F("status",v)} options={[{value:"pending",label:"Pending"},{value:"proses",label:"Proses"}]}/>
+          <Inp label="Catatan" value={form.catatan} onChange={v=>F("catatan",v)}/>
+        </div>
+        {items.map((item,i)=>(
+          <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 55px 100px auto 26px",gap:6,marginBottom:6,alignItems:"flex-end"}}>
+            <Sel label={i===0?"Produk":""} value={item.produk_id} onChange={v=>updItem(i,"produk_id",v)} options={produk.map(p=>({value:p.id,label:p.nama}))}/>
+            <Inp label={i===0?"Qty":""} value={item.qty} onChange={v=>updItem(i,"qty",v)} type="number"/>
+            <Inp label={i===0?"Harga":""} value={item.harga} onChange={v=>updItem(i,"harga",v)} type="number"/>
+            <div>{i===0&&<label style={{fontSize:11,color:"#64748b",fontWeight:600,display:"block",marginBottom:4}}>Sub</label>}<div style={{padding:"8px 0",fontWeight:600,color:"#22c55e",fontSize:12}}>{fmt(item.subtotal)}</div></div>
+            {items.length>1&&<button onClick={()=>setItems(items.filter((_,idx)=>idx!==i))} style={{background:"#7f1d1d",border:"none",color:"#f87171",borderRadius:6,cursor:"pointer",padding:"6px"}}>✕</button>}
+          </div>
+        ))}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,flexWrap:"wrap",gap:8}}>
+          <Btn onClick={()=>{const p=produk[0];setItems([...items,{produk_id:p?.id||"",nama_produk:p?.nama||"",qty:1,harga:p?.harga_jual||0,subtotal:p?.harga_jual||0}]);}} color="#1e3a5f" small>+ Item</Btn>
+          <div style={{fontWeight:700,fontSize:15,color:"#22c55e"}}>Total: {fmt(total)}</div>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:12}}><Btn onClick={simpan}>Simpan SO</Btn><Btn onClick={()=>setShowForm(false)} color="#475569">Batal</Btn></div>
+      </Card>}
+      <Card><Tbl headers={[{l:"No. SO"},{l:"Pelanggan"},{l:"Tanggal"},{l:"Total",r:true},{l:"DP",r:true},{l:"Sisa",r:true},{l:"Status"},{l:""}]} rows={list.map(r=>[<span style={{color:"#60a5fa"}}>{r.nomor_so}</span>,r.pelanggan||"-",<span style={{color:"#64748b"}}>{fmtDate(r.tanggal)}</span>,<span style={{fontWeight:600}}>{fmt(r.total)}</span>,<span style={{color:"#22c55e"}}>{fmt(r.dp)}</span>,<span style={{color:r.sisa_bayar>0?"#f87171":"#22c55e",fontWeight:600}}>{fmt(r.sisa_bayar)}</span>,statusBadge(r.status),<Btn onClick={()=>loadDetail(r)} color="#1e3a5f" small>Detail</Btn>])} empty="Belum ada Sales Order"/></Card>
+    </div>
+  );
+}
+function SuratJalan({showToast}){
+  const[list,setList]=useState([]);
+  const[soList,setSoList]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[showForm,setShowForm]=useState(false);
+  const[detail,setDetail]=useState(null);
+  const[form,setForm]=useState({so_id:"",pelanggan:"",alamat_kirim:"",catatan:"",tanggal:today(),status:"dikirim"});
+  const[soItems,setSoItems]=useState([]);
+  const[selectedItems,setSelectedItems]=useState([]);
+  const F=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const load=async()=>{try{const[l,s]=await Promise.all([sb("surat_jalan","GET",null,"?select=*&order=created_at.desc&limit=100"),sb("sales_order","GET",null,"?select=id,nomor_so,pelanggan&order=created_at.desc&limit=50")]);setList(l||[]);setSoList(s||[]);}catch(e){showToast("Gagal: "+e.message,"error");}setLoading(false);};
+  useEffect(()=>{load();},[]);
+  const loadSOItems=async(so_id)=>{if(!so_id){setSoItems([]);setSelectedItems([]);return;}const so=soList.find(x=>x.id===so_id);F("pelanggan",so?.pelanggan||"");const items=await sb("sales_order_detail","GET",null,`?so_id=eq.${so_id}&select=*`);setSoItems(items||[]);setSelectedItems((items||[]).map(i=>({...i,qty_kirim:i.qty})));};
+  const simpan=async()=>{
+    if(!form.so_id)return showToast("Pilih SO dulu!","error");
+    try{const nomor_sj=await genNomor("SJ");const[sj]=await sb("surat_jalan","POST",{...form,nomor_sj});
+    await sb("surat_jalan_detail","POST",selectedItems.map(i=>({sj_id:sj.id,produk_id:i.produk_id,nama_produk:i.nama_produk,qty:parseFloat(i.qty_kirim)||0})));
+    showToast(`SJ ${nomor_sj} dibuat!`);setShowForm(false);setForm({so_id:"",pelanggan:"",alamat_kirim:"",catatan:"",tanggal:today(),status:"dikirim"});setSoItems([]);setSelectedItems([]);load();}catch(e){showToast(e.message,"error");}
+  };
+  const loadDetail=async(r)=>{const d=await sb("surat_jalan_detail","GET",null,`?sj_id=eq.${r.id}&select=*`);setDetail({...r,items:d||[]});};
+  const updateStatus=async(id,status)=>{try{await sb(`surat_jalan?id=eq.${id}`,"PATCH",{status});showToast("Status diupdate!");setDetail(d=>({...d,status}));load();}catch(e){showToast(e.message,"error");}};
+  if(loading)return<Loading/>;
+  if(detail)return(
+    <div>
+      <button onClick={()=>setDetail(null)} style={{background:"none",border:"none",color:"#60a5fa",cursor:"pointer",fontSize:13,marginBottom:12}}>← Kembali</button>
+      <Card>
+        <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:16}}>
+          <div><h2 style={{margin:0,color:"#60a5fa",fontSize:18}}>{detail.nomor_sj}</h2><div style={{color:"#64748b",fontSize:12,marginTop:3}}>{detail.pelanggan} · {fmtDate(detail.tanggal)}</div>{detail.alamat_kirim&&<div style={{color:"#94a3b8",fontSize:12}}>📍 {detail.alamat_kirim}</div>}</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{statusBadge(detail.status)}<Btn onClick={()=>printDoc(`Surat Jalan: ${detail.nomor_sj}`,`Kepada: ${detail.pelanggan} | Tanggal: ${fmtDate(detail.tanggal)} | Alamat: ${detail.alamat_kirim||"-"}`,detail.items.map(i=>({...i,harga:null,subtotal:null})),null,detail.catatan)} color="#1e3a5f" small>🖨️ Print SJ</Btn>{detail.status==="dikirim"&&<Btn onClick={()=>updateStatus(detail.id,"diterima")} color="#166534" small>✅ Diterima</Btn>}</div>
+        </div>
+        <Tbl headers={[{l:"Produk"},{l:"Qty Kirim",r:true}]} rows={detail.items.map(i=>[i.nama_produk,<span style={{fontWeight:600}}>{i.qty}</span>])}/>
+        {detail.catatan&&<div style={{marginTop:10,color:"#64748b",fontSize:12}}>Catatan: {detail.catatan}</div>}
+      </Card>
+    </div>
+  );
+  return(
+    <div>
+      <PageTitle title="Surat Jalan (SJ)" subtitle="Buat dan kelola pengiriman barang"/>
+      <Btn onClick={()=>setShowForm(!showForm)} style={{marginBottom:16}}>+ SJ Baru</Btn>
+      {showForm&&<Card style={{marginBottom:16}}>
+        <h3 style={{margin:"0 0 12px",fontSize:14}}>Surat Jalan Baru</h3>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:9,marginBottom:12}}>
+          <Sel label="Dari SO" value={form.so_id} onChange={v=>{F("so_id",v);loadSOItems(v);}} options={[{value:"",label:"-- Pilih SO --"},...soList.map(s=>({value:s.id,label:`${s.nomor_so} - ${s.pelanggan}`}))]}/>
+          <Inp label="Pelanggan" value={form.pelanggan} onChange={v=>F("pelanggan",v)}/>
+          <Inp label="Alamat Kirim" value={form.alamat_kirim} onChange={v=>F("alamat_kirim",v)}/>
+          <Inp label="Tanggal" value={form.tanggal} onChange={v=>F("tanggal",v)} type="date"/>
+          <Inp label="Catatan" value={form.catatan} onChange={v=>F("catatan",v)}/>
+        </div>
+        {selectedItems.length>0&&<div><div style={{color:"#94a3b8",fontSize:11,fontWeight:600,marginBottom:8}}>QTY YANG DIKIRIM</div>{selectedItems.map((item,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"1fr 80px",gap:8,marginBottom:6,alignItems:"center"}}><div style={{fontSize:13}}>{item.nama_produk}</div><Inp label={i===0?"Qty Kirim":""} value={item.qty_kirim} onChange={v=>{const ni=[...selectedItems];ni[i].qty_kirim=v;setSelectedItems(ni);}} type="number"/></div>)}</div>}
+        <div style={{display:"flex",gap:8,marginTop:12}}><Btn onClick={simpan}>Simpan SJ</Btn><Btn onClick={()=>setShowForm(false)} color="#475569">Batal</Btn></div>
+      </Card>}
+      <Card><Tbl headers={[{l:"No. SJ"},{l:"Pelanggan"},{l:"Tanggal"},{l:"Status"},{l:""}]} rows={list.map(r=>[<span style={{color:"#60a5fa"}}>{r.nomor_sj}</span>,r.pelanggan||"-",<span style={{color:"#64748b"}}>{fmtDate(r.tanggal)}</span>,statusBadge(r.status),<Btn onClick={()=>loadDetail(r)} color="#1e3a5f" small>Detail</Btn>])} empty="Belum ada Surat Jalan"/></Card>
+    </div>
+  );
+}
+function Penjualan({showToast}){
+  const[list,setList]=useState([]);
+  const[produk,setProduk]=useState([]);
+  const[pelList,setPelList]=useState([]);
+  const[soList,setSoList]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[showForm,setShowForm]=useState(false);
+  const[detail,setDetail]=useState(null);
+  const[form,setForm]=useState({pelanggan_id:"",pelanggan:"",so_id:"",tanggal:today(),status:"lunas",jatuh_tempo:""});
+  const[items,setItems]=useState([]);
+  const F=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const load=async()=>{try{const[l,p,pl,sl]=await Promise.all([sb("penjualan","GET",null,"?select=*&order=created_at.desc&limit=100"),sb("produk","GET",null,"?select=*&order=nama"),sb("pelanggan","GET",null,"?select=*&order=nama"),sb("sales_order","GET",null,"?select=id,nomor_so,pelanggan&order=created_at.desc&limit=50")]);setList(l||[]);setProduk(p||[]);setPelList(pl||[]);setSoList(sl||[]);if(p?.length)setItems([{produk_id:p[0].id,nama_produk:p[0].nama,qty:1,harga:p[0].harga_jual,subtotal:p[0].harga_jual}]);}catch(e){showToast("Gagal: "+e.message,"error");}setLoading(false);};
+  useEffect(()=>{load();},[]);
+  const updItem=(i,k,v)=>{const ni=[...items];ni[i]={...ni[i],[k]:v};if(k==="produk_id"){const p=produk.find(x=>x.id===v);if(p){ni[i].nama_produk=p.nama;ni[i].harga=p.harga_jual;}}ni[i].subtotal=(parseFloat(ni[i].qty)||0)*(parseFloat(ni[i].harga)||0);setItems(ni);};
+  const total=items.reduce((a,b)=>a+(b.subtotal||0),0);
+  const simpan=async()=>{
+    if(!items.length)return showToast("Tambahkan item!","error");
+    try{const nomor_invoice=await genNomor("INV");const pel=pelList.find(p=>p.id===form.pelanggan_id);const namaP=pel?.nama||form.pelanggan||"-";
+    const[jual]=await sb("penjualan","POST",{...form,nomor_invoice,total,pelanggan:namaP});
+    await sb("penjualan_detail","POST",items.map(i=>({...i,penjualan_id:jual.id,qty:parseFloat(i.qty),harga:parseFloat(i.harga),subtotal:parseFloat(i.subtotal)})));
+    for(const item of items){const p=produk.find(x=>x.id===item.produk_id);if(p)await sb(`produk?id=eq.${item.produk_id}`,"PATCH",{stok:Math.max(0,(p.stok||0)-parseFloat(item.qty))});}
+    if(form.status==="kredit")await sb("piutang","POST",{penjualan_id:jual.id,pelanggan:namaP,total,terbayar:0,sisa:total,status:"belum lunas",jatuh_tempo:form.jatuh_tempo||null});
+    showToast(`Invoice ${nomor_invoice} berhasil!`);setShowForm(false);setForm({pelanggan_id:"",pelanggan:"",so_id:"",tanggal:today(),status:"lunas",jatuh_tempo:""});
+    if(produk[0])setItems([{produk_id:produk[0].id,nama_produk:produk[0].nama,qty:1,harga:produk[0].harga_jual,subtotal:produk[0].harga_jual}]);load();}catch(e){showToast(e.message,"error");}
+  };
+  const loadDetail=async(r)=>{const d=await sb("penjualan_detail","GET",null,`?penjualan_id=eq.${r.id}&select=*`);setDetail({...r,items:d||[]});};
+  if(loading)return<Loading/>;
+  if(detail)return(
+    <div>
+      <button onClick={()=>setDetail(null)} style={{background:"none",border:"none",color:"#60a5fa",cursor:"pointer",fontSize:13,marginBottom:12}}>← Kembali</button>
+      <Card>
+        <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:16}}>
+          <div><h2 style={{margin:0,color:"#60a5fa",fontSize:18}}>{detail.nomor_invoice}</h2><div style={{color:"#64748b",fontSize:12,marginTop:3}}>{detail.pelanggan||"-"} · {fmtDate(detail.tanggal)}</div></div>
+          <div style={{display:"flex",gap:8}}>{statusBadge(detail.status)}<Btn onClick={()=>printDoc(`Faktur: ${detail.nomor_invoice}`,`Pelanggan: ${detail.pelanggan||"-"} | Tanggal: ${fmtDate(detail.tanggal)} | Status: ${detail.status}`,detail.items,detail.total)} color="#1e3a5f" small>🖨️ Print</Btn></div>
+        </div>
+        <Tbl headers={[{l:"Produk"},{l:"Qty",r:true},{l:"Harga",r:true},{l:"Subtotal",r:true}]} rows={detail.items.map(i=>[i.nama_produk,i.qty,fmt(i.harga),<span style={{fontWeight:600}}>{fmt(i.subtotal)}</span>])}/>
+        <div style={{textAlign:"right",marginTop:12,fontSize:16,fontWeight:700,color:"#22c55e"}}>Total: {fmt(detail.total)}</div>
+      </Card>
+    </div>
+  );
+  return(
+    <div>
+      <PageTitle title="Faktur / Invoice" subtitle="Buat faktur penjualan & stok otomatis berkurang"/>
+      <Btn onClick={()=>setShowForm(!showForm)} style={{marginBottom:16}}>+ Invoice Baru</Btn>
+      {showForm&&<Card style={{marginBottom:16}}>
+        <h3 style={{margin:"0 0 12px",fontSize:14}}>Invoice Baru</h3>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:9,marginBottom:12}}>
+          <Sel label="Ref SO" value={form.so_id} onChange={v=>F("so_id",v)} options={[{value:"",label:"-- Tanpa SO --"},...soList.map(s=>({value:s.id,label:s.nomor_so}))]}/>
+          <Sel label="Pelanggan" value={form.pelanggan_id} onChange={v=>F("pelanggan_id",v)} options={[{value:"",label:"-- Pilih --"},...pelList.map(p=>({value:p.id,label:p.nama}))]}/>
+          <Inp label="Atau ketik nama" value={form.pelanggan} onChange={v=>F("pelanggan",v)} placeholder="Nama bebas"/>
+          <Inp label="Tanggal" value={form.tanggal} onChange={v=>F("tanggal",v)} type="date"/>
+          <Sel label="Status" value={form.status} onChange={v=>F("status",v)} options={[{value:"lunas",label:"Lunas"},{value:"kredit",label:"Kredit (Piutang)"}]}/>
+          {form.status==="kredit"&&<Inp label="Jatuh Tempo" value={form.jatuh_tempo} onChange={v=>F("jatuh_tempo",v)} type="date"/>}
+        </div>
+        {items.map((item,i)=>(
+          <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 55px 100px auto 26px",gap:6,marginBottom:6,alignItems:"flex-end"}}>
+            <Sel label={i===0?"Produk":""} value={item.produk_id} onChange={v=>updItem(i,"produk_id",v)} options={produk.map(p=>({value:p.id,label:p.nama}))}/>
+            <Inp label={i===0?"Qty":""} value={item.qty} onChange={v=>updItem(i,"qty",v)} type="number"/>
+            <Inp label={i===0?"Harga":""} value={item.harga} onChange={v=>updItem(i,"harga",v)} type="number"/>
+            <div>{i===0&&<label style={{fontSize:11,color:"#64748b",fontWeight:600,display:"block",marginBottom:4}}>Sub</label>}<div style={{padding:"8px 0",fontWeight:600,color:"#22c55e",fontSize:12}}>{fmt(item.subtotal)}</div></div>
+            {items.length>1&&<button onClick={()=>setItems(items.filter((_,idx)=>idx!==i))} style={{background:"#7f1d1d",border:"none",color:"#f87171",borderRadius:6,cursor:"pointer",padding:"6px"}}>✕</button>}
+          </div>
+        ))}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,flexWrap:"wrap",gap:8}}>
+          <Btn onClick={()=>{const p=produk[0];setItems([...items,{produk_id:p?.id||"",nama_produk:p?.nama||"",qty:1,harga:p?.harga_jual||0,subtotal:p?.harga_jual||0}]);}} color="#1e3a5f" small>+ Item</Btn>
+          <div style={{fontWeight:700,fontSize:15,color:"#22c55e"}}>Total: {fmt(total)}</div>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:12}}><Btn onClick={simpan}>Simpan Invoice</Btn><Btn onClick={()=>setShowForm(false)} color="#475569">Batal</Btn></div>
+      </Card>}
+      <Card><Tbl headers={[{l:"No. Invoice"},{l:"Pelanggan"},{l:"Tanggal"},{l:"Total",r:true},{l:"Status"},{l:""}]} rows={list.map(r=>[<span style={{color:"#60a5fa"}}>{r.nomor_invoice}</span>,r.pelanggan||"-",<span style={{color:"#64748b"}}>{fmtDate(r.tanggal)}</span>,<span style={{color:"#22c55e",fontWeight:600}}>{fmt(r.total)}</span>,statusBadge(r.status),<Btn onClick={()=>loadDetail(r)} color="#1e3a5f" small>Detail</Btn>])} empty="Belum ada invoice"/></Card>
+    </div>
+  );
+}
+function Pembelian({showToast}){
+  const[list,setList]=useState([]);
+  const[produk,setProduk]=useState([]);
+  const[supList,setSupList]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[showForm,setShowForm]=useState(false);
+  const[form,setForm]=useState({supplier_id:"",supplier:"",tanggal:today(),status:"lunas",jatuh_tempo:""});
+  const[items,setItems]=useState([]);
+  const F=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const load=async()=>{try{const[l,p,s]=await Promise.all([sb("pembelian","GET",null,"?select=*&order=created_at.desc&limit=100"),sb("produk","GET",null,"?select=*&order=nama"),sb("supplier","GET",null,"?select=*&order=nama")]);setList(l||[]);setProduk(p||[]);setSupList(s||[]);if(p?.length)setItems([{produk_id:p[0].id,nama_produk:p[0].nama,qty:1,harga:p[0].harga_beli,subtotal:p[0].harga_beli}]);}catch(e){showToast("Gagal: "+e.message,"error");}setLoading(false);};
+  useEffect(()=>{load();},[]);
+  const updItem=(i,k,v)=>{const ni=[...items];ni[i]={...ni[i],[k]:v};if(k==="produk_id"){const p=produk.find(x=>x.id===v);if(p){ni[i].nama_produk=p.nama;ni[i].harga=p.harga_beli;}}ni[i].subtotal=(parseFloat(ni[i].qty)||0)*(parseFloat(ni[i].harga)||0);setItems(ni);};
+  const total=items.reduce((a,b)=>a+(b.subtotal||0),0);
+  const simpan=async()=>{
+    if(!items.length)return showToast("Tambahkan item!","error");
+    try{const nomor_po=await genNomor("PO");const sup=supList.find(s=>s.id===form.supplier_id);const namaS=sup?.nama||form.supplier||"-";
+    const[beli]=await sb("pembelian","POST",{...form,nomor_po,total,supplier:namaS});
+    await sb("pembelian_detail","POST",items.map(i=>({...i,pembelian_id:beli.id,qty:parseFloat(i.qty),harga:parseFloat(i.harga),subtotal:parseFloat(i.subtotal)})));
+    for(const item of items){const p=produk.find(x=>x.id===item.produk_id);if(p)await sb(`produk?id=eq.${item.produk_id}`,"PATCH",{stok:(p.stok||0)+parseFloat(item.qty)});}
+    if(form.status==="hutang")await sb("hutang","POST",{pembelian_id:beli.id,supplier:namaS,total,terbayar:0,sisa:total,status:"belum lunas",jatuh_tempo:form.jatuh_tempo||null});
+    showToast(`PO ${nomor_po} berhasil!`);setShowForm(false);setForm({supplier_id:"",supplier:"",tanggal:today(),status:"lunas",jatuh_tempo:""});load();}catch(e){showToast(e.message,"error");}
+  };
+  if(loading)return<Loading/>;
+  return(
+    <div>
+      <PageTitle title="Pembelian" subtitle="Catat pembelian barang dari supplier"/>
+      <Btn onClick={()=>setShowForm(!showForm)} style={{marginBottom:16}}>+ PO Baru</Btn>
+      {showForm&&<Card style={{marginBottom:16}}>
+        <h3 style={{margin:"0 0 12px",fontSize:14}}>Purchase Order Baru</h3>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:9,marginBottom:12}}>
+          <Sel label="Supplier" value={form.supplier_id} onChange={v=>F("supplier_id",v)} options={[{value:"",label:"-- Pilih --"},...supList.map(s=>({value:s.id,label:s.nama}))]}/>
+          <Inp label="Atau ketik nama" value={form.supplier} onChange={v=>F("supplier",v)} placeholder="Nama bebas"/>
+          <Inp label="Tanggal" value={form.tanggal} onChange={v=>F("tanggal",v)} type="date"/>
+          <Sel label="Status" value={form.status} onChange={v=>F("status",v)} options={[{value:"lunas",label:"Lunas"},{value:"hutang",label:"Hutang"}]}/>
+          {form.status==="hutang"&&<Inp label="Jatuh Tempo" value={form.jatuh_tempo} onChange={v=>F("jatuh_tempo",v)} type="date"/>}
+        </div>
+        {items.map((item,i)=>(
+          <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 55px 100px auto 26px",gap:6,marginBottom:6,alignItems:"flex-end"}}>
+            <Sel label={i===0?"Produk":""} value={item.produk_id} onChange={v=>updItem(i,"produk_id",v)} options={produk.map(p=>({value:p.id,label:p.nama}))}/>
+            <Inp label={i===0?"Qty":""} value={item.qty} onChange={v=>updItem(i,"qty",v)} type="number"/>
+            <Inp label={i===0?"Harga Beli":""} value={item.harga} onChange={v=>updItem(i,"harga",v)} type="number"/>
+            <div>{i===0&&<label style={{fontSize:11,color:"#64748b",fontWeight:600,display:"block",marginBottom:4}}>Sub</label>}<div style={{padding:"8px 0",fontWeight:600,color:"#f59e0b",fontSize:12}}>{fmt(item.subtotal)}</div></div>
+            {items.length>1&&<button onClick={()=>setItems(items.filter((_,idx)=>idx!==i))} style={{background:"#7f1d1d",border:"none",color:"#f87171",borderRadius:6,cursor:"pointer",padding:"6px"}}>✕</button>}
+          </div>
+        ))}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,flexWrap:"wrap",gap:8}}>
+          <Btn onClick={()=>{const p=produk[0];setItems([...items,{produk_id:p?.id||"",nama_produk:p?.nama||"",qty:1,harga:p?.harga_beli||0,subtotal:p?.harga_beli||0}]);}} color="#1e3a5f" small>+ Item</Btn>
+          <div style={{fontWeight:700,fontSize:15,color:"#f59e0b"}}>Total: {fmt(total)}</div>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:12}}><Btn onClick={simpan}>Simpan PO</Btn><Btn onClick={()=>setShowForm(false)} color="#475569">Batal</Btn></div>
+      </Card>}
+      <Card><Tbl headers={[{l:"No. PO"},{l:"Supplier"},{l:"Tanggal"},{l:"Total",r:true},{l:"Status"}]} rows={list.map(r=>[<span style={{color:"#60a5fa"}}>{r.nomor_po}</span>,r.supplier||"-",<span style={{color:"#64748b"}}>{fmtDate(r.tanggal)}</span>,<span style={{color:"#f59e0b",fontWeight:600}}>{fmt(r.total)}</span>,statusBadge(r.status)])} empty="Belum ada pembelian"/></Card>
+    </div>
+  );
+}
+function BayarRow({r,onBayar,warnColor}){
+  const[open,setOpen]=useState(false);
+  const[jml,setJml]=useState("");
+  return r.status!=="lunas"?open?<div style={{display:"flex",gap:5,alignItems:"center"}}><input value={jml} onChange={e=>setJml(e.target.value)} type="number" placeholder="Jumlah" style={{background:"#0f1117",border:"1px solid #1e2535",borderRadius:6,padding:"4px 7px",color:"#e2e8f0",width:85,fontSize:12}}/><Btn onClick={()=>onBayar(r,parseFloat(jml),()=>{setOpen(false);setJml("");})} small>OK</Btn><Btn onClick={()=>setOpen(false)} color="#475569" small>✕</Btn></div>:<Btn onClick={()=>setOpen(true)} color={warnColor} small>Bayar</Btn>:<span style={{color:"#22c55e",fontSize:11}}>✅ Lunas</span>;
+}
+function PiutangPage({showToast}){
+  const[list,setList]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const load=async()=>{try{setList(await sb("piutang","GET",null,"?select=*&order=created_at.desc")||[]);}catch(e){showToast("Gagal: "+e.message,"error");}setLoading(false);};
+  useEffect(()=>{load();},[]);
+  const bayar=async(r,jml,cb)=>{if(!jml||jml<=0)return showToast("Jumlah tidak valid!","error");const newT=(r.terbayar||0)+jml;const newS=r.total-newT;const status=newS<=0?"lunas":"sebagian";try{await sb(`piutang?id=eq.${r.id}`,"PATCH",{terbayar:newT,sisa:Math.max(0,newS),status});showToast("Berhasil!");cb();load();}catch(e){showToast(e.message,"error");}};
+  if(loading)return<Loading/>;
+  const total=list.reduce((a,b)=>a+(b.sisa||0),0);
+  return(
+    <div>
+      <PageTitle title="Piutang" subtitle="Tagihan dari pelanggan belum dibayar"/>
+      <Card style={{marginBottom:12,borderTop:"3px solid #a78bfa"}}><div style={{color:"#64748b",fontSize:11}}>Total Piutang Aktif</div><div style={{color:"#a78bfa",fontWeight:700,fontSize:18}}>{fmt(total)}</div></Card>
+      <Card><Tbl headers={[{l:"Pelanggan"},{l:"Total",r:true},{l:"Terbayar",r:true},{l:"Sisa",r:true},{l:"Jatuh Tempo"},{l:"Status"},{l:""}]} rows={list.map(r=>[r.pelanggan||"-",fmt(r.total),<span style={{color:"#22c55e"}}>{fmt(r.terbayar)}</span>,<span style={{color:"#f87171",fontWeight:600}}>{fmt(r.sisa)}</span>,<span style={{color:r.jatuh_tempo&&new Date(r.jatuh_tempo)<new Date()&&r.status!=="lunas"?"#f87171":"#64748b"}}>{fmtDate(r.jatuh_tempo)}</span>,statusBadge(r.status),<BayarRow r={r} onBayar={bayar} warnColor="#166534"/>])} empty="Belum ada piutang"/></Card>
+    </div>
+  );
+}
+function HutangPage({showToast}){
+  const[list,setList]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const load=async()=>{try{setList(await sb("hutang","GET",null,"?select=*&order=created_at.desc")||[]);}catch(e){showToast("Gagal: "+e.message,"error");}setLoading(false);};
+  useEffect(()=>{load();},[]);
+  const bayar=async(r,jml,cb)=>{if(!jml||jml<=0)return showToast("Jumlah tidak valid!","error");const newT=(r.terbayar||0)+jml;const newS=r.total-newT;const status=newS<=0?"lunas":"sebagian";try{await sb(`hutang?id=eq.${r.id}`,"PATCH",{terbayar:newT,sisa:Math.max(0,newS),status});showToast("Berhasil!");cb();load();}catch(e){showToast(e.message,"error");}};
+  if(loading)return<Loading/>;
+  const total=list.reduce((a,b)=>a+(b.sisa||0),0);
+  return(
+    <div>
+      <PageTitle title="Hutang" subtitle="Tagihan ke supplier belum dibayar"/>
+      <Card style={{marginBottom:12,borderTop:"3px solid #f87171"}}><div style={{color:"#64748b",fontSize:11}}>Total Hutang Aktif</div><div style={{color:"#f87171",fontWeight:700,fontSize:18}}>{fmt(total)}</div></Card>
+      <Card><Tbl headers={[{l:"Supplier"},{l:"Total",r:true},{l:"Terbayar",r:true},{l:"Sisa",r:true},{l:"Jatuh Tempo"},{l:"Status"},{l:""}]} rows={list.map(r=>[r.supplier||"-",fmt(r.total),<span style={{color:"#22c55e"}}>{fmt(r.terbayar)}</span>,<span style={{color:"#f87171",fontWeight:600}}>{fmt(r.sisa)}</span>,<span style={{color:r.jatuh_tempo&&new Date(r.jatuh_tempo)<new Date()&&r.status!=="lunas"?"#f87171":"#64748b"}}>{fmtDate(r.jatuh_tempo)}</span>,statusBadge(r.status),<BayarRow r={r} onBayar={bayar} warnColor="#7f1d1d"/>])} empty="Belum ada hutang"/></Card>
+    </div>
+  );
+}
